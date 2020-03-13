@@ -27,12 +27,15 @@ if len(sys.argv) == 3:
 # back after a timeout time we shut the
 # connection
 def ping_loop(socket):
-    while RUNNING:
-        time.sleep(3)
-        ping_msg = message.Message()
-        ping_msg.set_type('ping')
-        bmsg = message.pack(ping_msg)
-        socket.sendall(bmsg)
+    try:
+        while RUNNING:
+            time.sleep(3)
+            ping_msg = message.Message()
+            ping_msg.set_type('ping')
+            bmsg = message.pack(ping_msg)
+            socket.sendall(bmsg)
+    except:
+        pass
 
 def listen_loop(socket):
     try:
@@ -51,30 +54,36 @@ def listen_loop(socket):
 if __name__ == '__main__':
     print('\033[1;37;40mType \'quit\' to leave')
 
-    s = socket.socket()
-    s.connect((IP_ADDR, PORT))
-    s.settimeout(10)
+    while True:
+        try:
+            s = socket.socket()
+            s.connect((IP_ADDR, PORT))
+            s.settimeout(10)
 
-    listen_thread = threading.Thread(target=listen_loop, args=(s,))
-    listen_thread.start()
+            listen_thread = threading.Thread(target=listen_loop, args=(s,))
+            listen_thread.start()
 
-    ping_thread = threading.Thread(target=ping_loop, args=(s,))
-    ping_thread.start()
+            ping_thread = threading.Thread(target=ping_loop, args=(s,))
+            ping_thread.start()
 
-    while RUNNING:
-        input_text = input()
-        if input_text == 'quit':
-            msg_leave = message.Message()
-            msg_leave.set_type('leave')
-            s.sendall(message.pack(msg))
-            RUNNING = False
-            break
+            while RUNNING:
+                input_text = input()
+                if input_text == 'quit':
+                    msg_leave = message.Message()
+                    msg_leave.set_type('leave')
+                    s.sendall(message.pack(msg))
+                    RUNNING = False
+                    break
 
-        #if it is a message to the server
-        msg = message.Message()
-        msg.set_type('text')
-        msg.set_text(input_text)
-        s.sendall(message.pack(msg))
+                #if it is a message to the server
+                msg = message.Message()
+                msg.set_type('text')
+                msg.set_text(input_text)
+                s.sendall(message.pack(msg))
 
-    listen_thread.join()
-    s.shutdown()
+            listen_thread.join()
+            ping_thread.join()
+            s.shutdown()
+        except:
+            print('No Connection.. Retrying')
+            time.sleep(10)

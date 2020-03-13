@@ -41,15 +41,21 @@ def handle_user_command(client, msg):
         prev_name = client.name_color + client.name
         client.name = ''
         client.get_name()
-        msg_name_change = message.Message()
-        msg_name_change.set_time(get_time())
-        msg_name_change.set_text('{} changed their name to {}'.format(prev_name, client.name))
-        broadcast(message.pack(msg_name_change))
+        # this code tells the chat room that a user changed their name
+        # by popular demand this was removed
+        # msg_name_change = message.Message()
+        # msg_name_change.set_time(get_time())
+        # msg_name_change.set_type('text')
+        # msg_name_change.set_text('{} changed their name to {}'.format(prev_name, client.name))
+        # broadcast(message.pack(msg_name_change))
         return True
     elif cmds[0] == '/color':
-        if cmds[1] in USER_COLORS:
-            print('set {} color to red'.format(client))
-            client.name_color = cmds[1]
+        if len(cmds) > 1:
+            if cmds[1] in USER_COLORS:
+                #print('set {} color to red'.format(client.name))
+                client.name_color = cmds[1]
+            else:
+                client.name_color = None
         else:
             client.name_color = None
         return True
@@ -135,6 +141,7 @@ class Client:
             #check name length
             if len(name_from_client) > NAME_SIZE_LIMIT:
                 msg_name_too_long = message.Message()
+                msg_name_too_long.set_type('text')
                 msg_name_too_long.set_text('That name is too long')
                 self.send(message.pack(msg_name_too_long))
             else:
@@ -145,6 +152,7 @@ class Client:
                         name_taken = True
                 if name_taken:
                     msg_name_taken = message.Message()
+                    msg_name_taken.set_type('text')
                     msg_name_taken.set_text('That name is already taken')
                     self.send(message.pack(msg_name_taken))
                 else:
@@ -162,7 +170,7 @@ class Client:
             msg_user_join.set_type('text')
             msg_user_join.set_text('{} has joined the chat!'.format(self.name))
             msg_user_join.set_time(get_time())
-            print(message.pack(msg_user_join))
+            #print(message.pack(msg_user_join))
             broadcast(message.pack(msg_user_join))
 
             #add this client to the client list
@@ -172,7 +180,7 @@ class Client:
             while msg_data:
                 msg = message.Message(data=message.unpack(msg_data))
                 if msg.get_text() != None:
-                    msg.set_time(time.strftime('%H:%M:%S', time.localtime()))
+                    msg.set_time(get_time())
                     msg.set_sender(self.name, color=self.name_color, clan=self.clan)
 
                     if msg.get_type() == 'ping':
@@ -181,12 +189,14 @@ class Client:
                         self.leave()
                     elif msg.get_type() == 'text':
                         if msg.get_text().split()[0] in USER_COMMANDS:
+                            #handle the user command
                             if not handle_user_command(self, msg):
+                                #if the user command fails
+                                #tell the user
                                 msg_invalid_command = message.Message()
                                 msg_invalid_command.set_type('text')
                                 msg_invalid_command.set_text('Invalid command. view /help')
                                 self.send(message.pack(msg_invalid_command))
-                            print('PASS')
                         else:
                             if len(msg.get_text()) > MSG_SIZE_MAX:
                                 error_msg = message.Message()
@@ -198,13 +208,14 @@ class Client:
                                 print('{} attempted to send a LARGE message'.format(self.address))
                             else:
                                 #the formatted message as it will be sent to all users
-                                msg.print()
+                                #msg.print()
                                 broadcast(message.pack(msg))
                     else:
                         print('Unknown message type: {}'.format(message.unpack(msg)))
                 msg_data = self.conn.recv(DATA_SIZE)
         except Exception as e:
-            print(e)
+            exc_information = sys.exc_info()
+            exc_information[2].print_exception()
             print("Connection Lost to {}".format(self.address))
             self.leave()
 
