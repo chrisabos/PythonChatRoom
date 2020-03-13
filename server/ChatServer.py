@@ -5,6 +5,8 @@ import socket
 import threading
 import time
 
+import message
+
 IP_ADDR = '192.168.242.239'
 PORT = 12345
 DATA_SIZE = 1024
@@ -16,7 +18,7 @@ NAME_SIZE_LIMIT = 20
 
 LOG_FILE = open('logs.txt', 'w+')
 
-USER_COMMANDS = ['name', 'color', 'clan']
+USER_COMMANDS = ['/name', '/color', '/clan']
 
 if len(sys.argv) == 3:
     IP_ADDR = sys.argv[1]
@@ -61,6 +63,15 @@ def handle_user_command(client, msg):
         return True
     return False
 
+# def client_timeout():
+#     while RUNNING:
+#         for c in CLIENTS:
+#             c.timeout_timer -= 1
+#             if c.timeout_timer == 0:
+#                 #c.leave()
+#                 pass
+#         time.sleep(3)
+
 
 class Client:
     def __init__(self, conn, address):
@@ -68,6 +79,7 @@ class Client:
         self.address = address
         self.name = ''
         self.name_color = ' '
+        self.timeout_timer = 4
 
     #send a message to this client
     def send(self, msg):
@@ -82,17 +94,41 @@ class Client:
                 except:
                     pass
 
+    def handle_ping(self):
+        print('ping from {}'.format(self.address))
+        msg_ping_resp = message.Message()
+        msg_ping_resp.set_type('ping')
+        self.send(message.pack(msg_ping_resp))
+
+    #called when making the client leave the SERVER
+    # either by request or timeout
+    def leave(self):
+        CLIENTS.remove(self)
+        msg_user_left = message.Message()
+        msg_user_left.set_time(get_time())
+        msg_user_left.set_text('{} left the chat'.format(self.name))
+        broadcast(message.pack(msg_user_left))
+
     #get the client name from the client
     def get_name(self):
         #do this until we have a name
         while self.name == '':
             #prompt user
-            self.send('Please input your name: '.encode())
+            msg_name_prompt = message.Message()
+            msg_name_prompt.clear()
+            msg_name_prompt.set_text('Please input your name')
+            self.send(message.pack(msg_name_prompt))
             #get name from socket
-            name_from_client = self.conn.recv(DATA_SIZE).decode('utf-8')
+            msg_client_name = message.Message(data=message.unpack(self.conn.recv(DATA_SIZE)))
+            while msg_client_name.get_type() == 'ping':
+                self.handle_ping()
+                msg_client_name = message.Message(data=message.unpack(self.conn.recv(DATA_SIZE)))
+            name_from_client = msg_client_name.get_text()
             #check name length
-            if len(self.name) > NAME_SIZE_LIMIT:
-                self.send('That name is too long'.encode())
+            if len(name_from_client) > NAME_SIZE_LIMIT:
+                msg_name_too_long = message.Message()
+                msg_name_too_long.set_text('That name is too long')
+                self.send(message.pack(msg_name_too_long))
             else:
                 #check name isnt already taken
                 name_taken = False
@@ -100,7 +136,9 @@ class Client:
                     if name_from_client == c.name:
                         name_taken = True
                 if name_taken:
-                    self.send('That name is already taken'.encode())
+                    msg_name_taken = message.Message()
+                    msg_name_taken.set_text('That name is already taken')
+                    self.send(message.pack(msg_name_taken))
                 else:
                     #if we pass all the tests then set the clien name
                     self.name = name_from_client
@@ -112,37 +150,50 @@ class Client:
             self.get_name()
 
             #tell everyone there is a new client
-            join_msg = '{} [SERVER]: {} has joined the chat!'.format(get_time(), self.name)
-            broadcast(join_msg.encode())
-            LOG_FILE.write('{} from {}'.format(join_msg, self.address))
+            msg_user_join = message.Message()
+            msg_user_join.set_type('text')
+            msg_user_join.set_text('{} has joined the chat!'.format(self.name))
+            msg_user_join.set_time(get_time())
+            print(message.pack(msg_user_join))
+            broadcast(message.pack(msg_user_join))
 
             #add this client to the client list
             CLIENTS.append(self)
 
-            data = self.conn.recv(DATA_SIZE)
-            while data:
-                msg = data.decode()
+            msg_data = self.conn.recv(DATA_SIZE)
+            while msg_data:
+                msg = message.Message(data=message.unpack(msg_data))
+                if msg.get_text() != None:
+                    msg.set_time(time.strftime('%H:%M:%S', time.localtime()))
+                    msg.set_sender(self.name)
 
-                if msg.split()[0][1:] in USER_COMMANDS:
-                    handle_user_command(self, msg)
-                else:
-                    msg_time = '{}'.format(time.strftime('%H:%M:%S', time.localtime()))
-                    if len(msg) > MSG_SIZE_MAX:
-                        error = msg_time + '[ERROR]: Your message was too long. Max is 200 characters.'
-                        LOG_FILE.write(error)
-                        self.send(error.encode())
-                        print('{} attempted to send a LARGE message'.format(self.address))
+                    if msg.get_type() == 'ping':
+                        self.handle_ping()
+                    elif msg.get_type() == 'leave':
+                        self.leave()
+                    elif msg.get_type() == 'text':
+                        if msg.get_text().split()[0] in USER_COMMANDS:
+                            handle_user_command(self, msg)
+                        else:
+                            if len(msg.get_text()) > MSG_SIZE_MAX:
+                                error_msg = message.Message()
+                                error_msg.set_type('error')
+                                error_msg.set_sender('[SERVER]')
+                                error_msg.set_time(get_time())
+                                error_msg.set_text('Your message was too long. Max is 200 characters.')
+                                self.send(message.pack(error_msg))
+                                print('{} attempted to send a LARGE message'.format(self.address))
+                            else:
+                                #the formatted message as it will be sent to all users
+                                msg.print()
+                                broadcast(message.pack(msg))
                     else:
-                        #the formatted message as it will be sent to all users
-                        format_msg = '{}{}: {}'.format(msg_time, self.name_color + self.name, data.decode())
-                        LOG_FILE.write(format_msg)
-                        print(format_msg)
-                        broadcast(format_msg.encode())
-                data = self.conn.recv(DATA_SIZE)
-        except:
+                        print('Unknown message type: {}'.format(message.unpack(msg)))
+                msg_data = self.conn.recv(DATA_SIZE)
+        except Exception as e:
+            print(e)
             print("Connection Lost to {}".format(self.address))
-            broadcast("{} {} has disconnected".format(get_time(), self.name).encode())
-            CLIENTS.remove(self)
+            self.leave()
 
 def accept_clients():
     s = socket.socket()
@@ -151,6 +202,7 @@ def accept_clients():
     s.listen()
     while RUNNING:
         conn, address = s.accept()
+        conn.settimeout(10)
         new_conn_msg = "{} Connection from {}".format(get_time(), address)
         print(new_conn_msg)
         LOG_FILE.write(new_conn_msg)
@@ -159,6 +211,10 @@ def accept_clients():
         new_client_thread.start()
 
 def tcp_server():
+
+    # client_timeout_thread = threading.Thread(target=client_timeout)
+    # client_timeout_thread.start()
+
     accept_thread = threading.Thread(target=accept_clients)
     accept_thread.start()
 

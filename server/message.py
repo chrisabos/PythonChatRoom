@@ -10,22 +10,11 @@ class Message:
     def __init__(self, data={}):
         self.msg = data
 
-    def __str__(self):
-        str_msg = []
+    def print(self):
+        print(pack(self))
 
-        if self.msg.get('time', False):
-            str_msg.append(self.msg['time'])
-
-        if self.msg.get('sender', False):
-            if self.msg['sender'].get('clan', False):
-                str_msg.append('<{}>'.format(self.msg['sender']['clan']))
-            if self.msg['sender'].get('name', False):
-                str_msg.append('{}:'.format(self.msg['sender']['name']))
-
-        if self.msg.get('text', False):
-            str_msg.append(self.msg['text'])
-
-        return ' '.join(str_msg)
+    def clear(self):
+        self.msg = {}
 
     ####################
     #    GETTERS       #
