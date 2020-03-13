@@ -49,7 +49,7 @@ def listen_loop(socket):
         print('Connection to server lost!!!')
 
 if __name__ == '__main__':
-    print('Type \'quit\' to leave')
+    print('\033[1;37;40mType \'quit\' to leave')
 
     s = socket.socket()
     s.connect((IP_ADDR, PORT))

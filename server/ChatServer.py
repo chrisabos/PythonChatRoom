@@ -18,7 +18,8 @@ NAME_SIZE_LIMIT = 20
 
 LOG_FILE = open('logs.txt', 'w+')
 
-USER_COMMANDS = ['/name', '/color', '/clan']
+USER_COMMANDS = ['/name', '/color', '/clan', '/help']
+USER_COLORS = ['red', 'green', 'yellow', 'blue', 'purple', 'cyan']
 
 if len(sys.argv) == 3:
     IP_ADDR = sys.argv[1]
@@ -35,31 +36,37 @@ def get_time():
     return '{}'.format(time.strftime('%H:%M:%S', time.localtime()))
 
 def handle_user_command(client, msg):
-    cmds = msg.split()
+    cmds = msg.get_text().split()
     if cmds[0] == '/name':
         prev_name = client.name_color + client.name
         client.name = ''
         client.get_name()
-        name_change_msg = '{} {} changed their name to {}'.format(get_time(), prev_name, client.name_color + client.name)
-        broadcast(name_change_msg)
-        LOG_FILE.write(name_change_msg)
+        msg_name_change = message.Message()
+        msg_name_change.set_time(get_time())
+        msg_name_change.set_text('{} changed their name to {}'.format(prev_name, client.name))
+        broadcast(message.pack(msg_name_change))
         return True
     elif cmds[0] == '/color':
-        if cmds[1] == 'red':
+        if cmds[1] in USER_COLORS:
             print('set {} color to red'.format(client))
-            client.name_color = '\033[1,31,40m '
-        elif cmds[1] == 'green':
-            client.name_color = '\033[1,32,40m '
-        elif cmds[1] == 'yellow':
-            client.name_color = '\033[1,33,40m '
-        elif cmds[1] == 'blue':
-            client.name_color = '\033[1,34,40m '
-        elif cmds[1] == 'purple':
-            client.name_color = '\033[1,35,40m '
-        elif cmds[1] == 'cyan':
-            client.name_color = '\033[1,36,40m '
+            client.name_color = cmds[1]
         else:
-            client.name_color = ' '
+            client.name_color = None
+        return True
+    elif cmds[0] == '/clan':
+        if len(cmds) > 1:
+            if cmds[1] == 'leave':
+                client.clan = None
+                return True
+            elif len(cmds[1]) <= 4:
+                client.clan = cmds[1]
+                return True
+        return False
+    elif cmds[0] == '/help':
+        msg_help = message.Message()
+        msg_help.set_type('text')
+        msg_help.set_text('\n\t/help - show help\n\t/name <new name> - change your name\n\t/color [red, green, yellow, blue, purple, cyan] - change name color WIP\n\t/clan leave/<4 characters> - leave or join a clan')
+        client.send(message.pack(msg_help))
         return True
     return False
 
@@ -78,7 +85,8 @@ class Client:
         self.conn = conn
         self.address = address
         self.name = ''
-        self.name_color = ' '
+        self.name_color = None
+        self.clan = None
         self.timeout_timer = 4
 
     #send a message to this client
@@ -95,7 +103,7 @@ class Client:
                     pass
 
     def handle_ping(self):
-        print('ping from {}'.format(self.address))
+        #print('ping from {}'.format(self.address))
         msg_ping_resp = message.Message()
         msg_ping_resp.set_type('ping')
         self.send(message.pack(msg_ping_resp))
@@ -165,7 +173,7 @@ class Client:
                 msg = message.Message(data=message.unpack(msg_data))
                 if msg.get_text() != None:
                     msg.set_time(time.strftime('%H:%M:%S', time.localtime()))
-                    msg.set_sender(self.name)
+                    msg.set_sender(self.name, color=self.name_color, clan=self.clan)
 
                     if msg.get_type() == 'ping':
                         self.handle_ping()
@@ -173,7 +181,12 @@ class Client:
                         self.leave()
                     elif msg.get_type() == 'text':
                         if msg.get_text().split()[0] in USER_COMMANDS:
-                            handle_user_command(self, msg)
+                            if not handle_user_command(self, msg):
+                                msg_invalid_command = message.Message()
+                                msg_invalid_command.set_type('text')
+                                msg_invalid_command.set_text('Invalid command. view /help')
+                                self.send(message.pack(msg_invalid_command))
+                            print('PASS')
                         else:
                             if len(msg.get_text()) > MSG_SIZE_MAX:
                                 error_msg = message.Message()

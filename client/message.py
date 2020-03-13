@@ -20,7 +20,22 @@ class Message:
             if self.msg['sender'].get('clan', False):
                 str_msg.append('<{}>'.format(self.msg['sender']['clan']))
             if self.msg['sender'].get('name', False):
-                str_msg.append('{}:'.format(self.msg['sender']['name']))
+                color = ''
+                white = '\033[1;37;40m'
+                if self.msg['sender'].get('color', False):
+                    if self.msg['sender']['color'] == 'red':
+                        color = '\033[1;31;40m'
+                    elif self.msg['sender']['color'] == 'green':
+                        color = '\033[1;32;40m'
+                    elif self.msg['sender']['color'] == 'yellow':
+                        color = '\033[1;33;40m'
+                    elif self.msg['sender']['color'] == 'blue':
+                        color = '\033[1;34;40m'
+                    elif self.msg['sender']['color'] == 'purple':
+                        color = '\033[1;35;40m'
+                    elif self.msg['sender']['color'] == 'cyan':
+                        color = '\033[1;36;40m'
+                str_msg.append('{}{}{}:'.format(color, self.msg['sender']['name'], white))
 
         if self.msg.get('text', False):
             str_msg.append(self.msg['text'])
