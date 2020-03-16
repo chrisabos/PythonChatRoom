@@ -1,8 +1,10 @@
 import json
 
+#pack a message into bytearray
 def pack(msg):
     return json.dumps(msg.msg).encode('utf-8')
 
+#unpack a bytearray to a message
 def unpack(msg):
     return json.loads(msg.decode('utf-8'))
 
@@ -16,6 +18,7 @@ class Message:
         if self.msg.get('time', False):
             str_msg.append(self.msg['time'])
 
+        #Overwrite how this class gets shown as a string
         if self.msg.get('sender', False):
             if self.msg['sender'].get('clan', False):
                 str_msg.append('<{}>'.format(self.msg['sender']['clan']))

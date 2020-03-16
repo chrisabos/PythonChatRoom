@@ -1,42 +1,69 @@
 #!/user/bin/env python3
 
+############################################################
+### LIBRARIES
+############################################################
 import sys
 import socket
 import threading
 import time
 
+#Private library
 import message
 
-IP_ADDR = '192.168.242.239'
-PORT = 12345
-DATA_SIZE = 1024
-CLIENTS = []
-RUNNING = True
+############################################################
+### CONFIG
+############################################################
+IP_ADDR = '192.168.242.239' # IP ADDRESS
+PORT = 12345 # PORT NUMBER
+DATA_SIZE = 1024 # MAX BYTE TRANSMISSION SIZE
+MSG_SIZE_MAX = 200 # MAX TEXT SIZE -- maximum number of characters in the text portion of the message
+NAME_SIZE_LIMIT = 20 # MAX CLIENT NAME SIZE
+SHOW_CLIENT_MESSAGES = True # display the client messages in the server CLI
 
-MSG_SIZE_MAX = 200
-NAME_SIZE_LIMIT = 20
+############################################################
+### GLOBAL VARIABLES
+############################################################
+global RUNNING
+CLIENTS = [] # a list of all connected clients
+RUNNING = True # true while the server is running - set to false to terminate
+USER_COMMANDS = ['/name', '/color', '/clan', '/help'] # a list of user commands
+USER_COLORS = ['red', 'green', 'yellow', 'blue', 'purple', 'cyan'] # list of client name colors
 
-LOG_FILE = open('logs.txt', 'w+')
-
-USER_COMMANDS = ['/name', '/color', '/clan', '/help']
-USER_COLORS = ['red', 'green', 'yellow', 'blue', 'purple', 'cyan']
-
+############################################################
+### MANAGE CLI ARGUMENTS
+############################################################
 if len(sys.argv) == 3:
     IP_ADDR = sys.argv[1]
     PORT = int(sys.argv[2])
 
+# Function: broadcast
+# Desc: a function that sends the same message to all connected clients
+# Args: byte array of message
+# Returns: None
 def broadcast(msg):
     for c in CLIENTS:
         try:
             c.send(msg)
         except:
             pass
+    return None
 
+# Function: get_time
+# Desc: a function that returns a formatted string represening the current local time
+# Returns: time as string
 def get_time():
     return '{}'.format(time.strftime('%H:%M:%S', time.localtime()))
 
+# Function: handle_user_command
+# Desc: this function takes a sending client and a command message and executes the command
+# Args: sending client, the message text
+# Returns: True/ False if the command is valid/ not valid
 def handle_user_command(client, msg):
+    # break the text into components of the command
     cmds = msg.get_text().split()
+
+    ## NAME COMMAND
     if cmds[0] == '/name':
         prev_name = client.name_color + client.name
         client.name = ''
@@ -49,6 +76,8 @@ def handle_user_command(client, msg):
         # msg_name_change.set_text('{} changed their name to {}'.format(prev_name, client.name))
         # broadcast(message.pack(msg_name_change))
         return True
+
+    ## NAME COLOR COMMAND
     elif cmds[0] == '/color':
         if len(cmds) > 1:
             if cmds[1] in USER_COLORS:
@@ -59,6 +88,8 @@ def handle_user_command(client, msg):
         else:
             client.name_color = None
         return True
+
+    ## CLAN COMMAND
     elif cmds[0] == '/clan':
         if len(cmds) > 1:
             if cmds[1] == 'leave':
@@ -68,6 +99,8 @@ def handle_user_command(client, msg):
                 client.clan = cmds[1]
                 return True
         return False
+
+    ## HELP COMMAND
     elif cmds[0] == '/help':
         msg_help = message.Message()
         msg_help.set_type('text')
@@ -76,16 +109,8 @@ def handle_user_command(client, msg):
         return True
     return False
 
-# def client_timeout():
-#     while RUNNING:
-#         for c in CLIENTS:
-#             c.timeout_timer -= 1
-#             if c.timeout_timer == 0:
-#                 #c.leave()
-#                 pass
-#         time.sleep(3)
 
-
+## CLIENT CLASS - each connecting client gets assigned a class
 class Client:
     def __init__(self, conn, address):
         self.conn = conn
@@ -108,6 +133,7 @@ class Client:
                 except:
                     pass
 
+    #manages ping messages sent to this client
     def handle_ping(self):
         #print('ping from {}'.format(self.address))
         msg_ping_resp = message.Message()
@@ -127,29 +153,39 @@ class Client:
     def get_name(self):
         #do this until we have a name
         while self.name == '':
+
             #prompt user
             msg_name_prompt = message.Message()
             msg_name_prompt.clear()
             msg_name_prompt.set_text('Please input your name')
             self.send(message.pack(msg_name_prompt))
-            #get name from socket
-            msg_client_name = message.Message(data=message.unpack(self.conn.recv(DATA_SIZE)))
-            while msg_client_name.get_type() == 'ping':
-                self.handle_ping()
+
+            try:
+                #get name from socket while the message received is not a ping
                 msg_client_name = message.Message(data=message.unpack(self.conn.recv(DATA_SIZE)))
-            name_from_client = msg_client_name.get_text()
-            #check name length
+                while msg_client_name.get_type() == 'ping':
+                    self.handle_ping()
+                    msg_client_name = message.Message(data=message.unpack(self.conn.recv(DATA_SIZE)))
+                name_from_client = msg_client_name.get_text()
+            except:
+                #if the data from the client is malformed then restart this process
+                break
+
+            #verify name length
             if len(name_from_client) > NAME_SIZE_LIMIT:
+                # if the name is too long restart
                 msg_name_too_long = message.Message()
                 msg_name_too_long.set_type('text')
-                msg_name_too_long.set_text('That name is too long')
+                msg_name_too_long.set_text('That name is too long. Max: {} characters'.format(NAME_SIZE_LIMIT))
                 self.send(message.pack(msg_name_too_long))
             else:
-                #check name isnt already taken
+                #verify name isnt already taken
                 name_taken = False
                 for c in CLIENTS:
                     if name_from_client == c.name:
                         name_taken = True
+
+                # if the name is taken then restart
                 if name_taken:
                     msg_name_taken = message.Message()
                     msg_name_taken.set_type('text')
@@ -170,24 +206,28 @@ class Client:
             msg_user_join.set_type('text')
             msg_user_join.set_text('{} has joined the chat!'.format(self.name))
             msg_user_join.set_time(get_time())
-            #print(message.pack(msg_user_join))
             broadcast(message.pack(msg_user_join))
 
             #add this client to the client list
             CLIENTS.append(self)
 
+            # main data listen loop
             msg_data = self.conn.recv(DATA_SIZE)
             while msg_data:
+                # turn the data into a message
                 msg = message.Message(data=message.unpack(msg_data))
                 if msg.get_text() != None:
+                    # set the values of the message such as the time and the sender
                     msg.set_time(get_time())
                     msg.set_sender(self.name, color=self.name_color, clan=self.clan)
 
+                    #handle message types
                     if msg.get_type() == 'ping':
                         self.handle_ping()
                     elif msg.get_type() == 'leave':
                         self.leave()
                     elif msg.get_type() == 'text':
+                        #check if the msg the user sent is a command
                         if msg.get_text().split()[0] in USER_COMMANDS:
                             #handle the user command
                             if not handle_user_command(self, msg):
@@ -198,6 +238,7 @@ class Client:
                                 msg_invalid_command.set_text('Invalid command. view /help')
                                 self.send(message.pack(msg_invalid_command))
                         else:
+                            #check the text from the user is smaller than the max acceptable size
                             if len(msg.get_text()) > MSG_SIZE_MAX:
                                 error_msg = message.Message()
                                 error_msg.set_type('error')
@@ -207,54 +248,75 @@ class Client:
                                 self.send(message.pack(error_msg))
                                 print('{} attempted to send a LARGE message'.format(self.address))
                             else:
-                                #the formatted message as it will be sent to all users
-                                #msg.print()
+                                #broadcast the message to the clients
                                 broadcast(message.pack(msg))
+                                if SHOW_CLIENT_MESSAGES:
+                                    print(msg)
                     else:
+                        #handle unknown cases
                         print('Unknown message type: {}'.format(message.unpack(msg)))
+                #continue to listen for data from the client
                 msg_data = self.conn.recv(DATA_SIZE)
         except Exception as e:
+            #handle exceptions
+            #i am not the most familiar with the python exceptions
+            #so im printing as much information to both learn and debug
+            #this does lead to a messy server console
             exc_information = sys.exc_info()
-            exc_information[2].print_exception()
+            print(exc_information)
             print("Connection Lost to {}".format(self.address))
             self.leave()
 
-def accept_clients():
+
+#Function: start_server
+#Desc: starts the server by creating the default connection socket for users to connect to
+#Return: the server socket
+def start_server():
+    print("\033[1;37;40mStarting server on {}:{}".format(IP_ADDR, PORT))
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((IP_ADDR, PORT))
     s.listen()
+    return s
+
+#Function: accept_clients
+#Desc: a loop for listening and establishing clients to the server
+#Args: the server socket
+def accept_clients(s):
     while RUNNING:
         conn, address = s.accept()
         conn.settimeout(10)
         new_conn_msg = "{} Connection from {}".format(get_time(), address)
         print(new_conn_msg)
-        LOG_FILE.write(new_conn_msg)
         new_client = Client(conn, address)
         new_client_thread = threading.Thread(target=new_client.run)
         new_client_thread.start()
 
-def tcp_server():
+def main():
+    #start the server
+    server_socket = start_server()
 
-    # client_timeout_thread = threading.Thread(target=client_timeout)
-    # client_timeout_thread.start()
+    global RUNNING
 
-    accept_thread = threading.Thread(target=accept_clients)
+    #start the client accept thread
+    accept_thread = threading.Thread(target=accept_clients, args=(server_socket, ))
     accept_thread.start()
 
-    #command input
+    #handle server command line input
     while RUNNING:
         user_input = input()
-        if user_input == 'quit':
-            #RUNNING = False
+        if user_input.startswith('/stop'):
+            RUNNING = False
             break
-        elif user_input.startswith('/say '):
-            broadcast(user_input[5:].encode())
+        elif user_input.startswith('/say'):
+            msg_server_broadcast = message.Message()
+            msg_server_broadcast.set_type('text')
+            msg_server_broadcast.set_text(user_input[5:])
+            msg_server_broadcast.set_sender('[SERVER]')
+            broadcast(message.pack(msg_server_broadcast))
 
     accept_thread.stop()
-    LOG_FILE.close()
 
 if __name__ == '__main__':
-    print("Starting server on {}:{}".format(IP_ADDR, PORT))
-    tcp_server()
+    main()
     #udp_echo()
